@@ -131,13 +131,17 @@
   /* Modal */
   .modal{position:fixed;inset:0;background:rgba(0,0,0,.85);display:none;align-items:center;justify-content:center;padding:18px;z-index:50}
   .modal.show{display:flex}
-  .modal-box{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);max-width:860px;width:100%;max-height:90vh;overflow:auto}
-  .modal-head{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid var(--border)}
-  .modal-head .name{font-size:14px}
+  .modal-box{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);max-width:860px;width:100%;max-height:92vh;overflow:auto;position:relative}
+  .modal-head{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 14px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--panel);z-index:2}
+  .modal-head .name{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .modal-body{padding:16px;display:grid;place-items:center;min-height:120px}
   .modal-body video,.modal-body img,.modal-body audio{max-width:100%;max-height:70vh;border-radius:10px}
+  .modal-foot{position:sticky;bottom:0;background:var(--panel);border-top:1px solid var(--border);padding:12px 14px;display:flex;justify-content:center}
+  .close-big{width:100%;max-width:320px;background:var(--accent);color:#06231a;border:none;padding:13px;border-radius:11px;font-size:15px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px}
+  .close-big:active{filter:brightness(.93)}
+  .close-big svg{width:18px;height:18px}
   .docx-note{font-size:12px;color:var(--muted);margin-bottom:12px;text-align:center}
-  .docx-view{background:#fff;color:#1a1a1a;border-radius:10px;padding:30px 34px;max-height:74vh;overflow:auto;width:100%;line-height:1.6;font-size:15px}
+  .docx-view{background:#fff;color:#1a1a1a;border-radius:10px;padding:30px 34px;max-height:66vh;overflow:auto;width:100%;line-height:1.6;font-size:15px}
   .docx-view h1,.docx-view h2,.docx-view h3{margin:.8em 0 .4em;line-height:1.25}
   .docx-view h1{font-size:1.6em}.docx-view h2{font-size:1.35em}.docx-view h3{font-size:1.15em}
   .docx-view p{margin:.5em 0}
@@ -146,8 +150,9 @@
   .docx-view td,.docx-view th{border:1px solid #ccc;padding:6px 10px;text-align:left}
   .docx-view img{max-width:100%;height:auto}
   .docx-view a{color:#0a66c2}
-  .closeX{background:none;border:none;color:var(--muted);cursor:pointer;font-size:22px;line-height:1;padding:4px 8px}
-  .closeX:hover{color:var(--text)}
+  .closeX{background:var(--panel-2);border:1px solid var(--border);color:var(--text);cursor:pointer;font-size:20px;line-height:1;width:40px;height:40px;border-radius:10px;flex-shrink:0;display:grid;place-items:center}
+  .closeX:hover{border-color:var(--accent);color:var(--accent)}
+  .closeX:active{filter:brightness(.93)}
 
   footer{margin-top:48px;border-top:1px solid var(--border);padding-top:20px;font-size:12px;color:var(--muted);line-height:1.7}
   .donate{display:inline-flex;align-items:center;gap:7px;background:#0070ba;color:#fff;padding:9px 16px;border-radius:10px;text-decoration:none;font-weight:600;font-size:13px;margin:14px 0}
@@ -292,9 +297,15 @@
   <div class="modal-box">
     <div class="modal-head">
       <span class="name" id="mName"></span>
-      <button class="closeX" id="closeX">&times;</button>
+      <button class="closeX" id="closeX" title="Schließen" aria-label="Schließen">&times;</button>
     </div>
     <div class="modal-body" id="mBody"></div>
+    <div class="modal-foot">
+      <button class="close-big" id="closeBig">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        Schließen
+      </button>
+    </div>
   </div>
 </div>
 
@@ -593,7 +604,7 @@ async function preview(r,k){
     if(k==='audio'){const el=document.createElement('audio');el.controls=true;el.autoplay=true;el.src=url;$('mBody').innerHTML='';$('mBody').appendChild(el);return;}
     if(k==='pdf'){
       $('mBody').style.display='block';
-      $('mBody').innerHTML='<iframe src="'+url+'" style="width:100%;height:78vh;border:none;border-radius:10px;background:#fff"></iframe>'+
+      $('mBody').innerHTML='<iframe src="'+url+'" style="width:100%;height:68vh;border:none;border-radius:10px;background:#fff"></iframe>'+
         '<div style="text-align:center;margin-top:10px"><a href="'+url+'" target="_blank" rel="noopener" style="color:var(--accent);font-size:13px;text-decoration:none">In neuem Tab öffnen</a></div>';
       return;
     }
@@ -636,8 +647,34 @@ async function renderDocx(url, r){
 }
 function closeModal(){ const v=$('mBody').querySelector('video,audio'); if(v)v.pause(); $('mBody').innerHTML=''; $('mBody').style.display=''; $('modal').classList.remove('show'); }
 $('closeX').onclick=closeModal;
+$('closeBig').onclick=closeModal;
 $('modal').onclick=e=>{if(e.target===$('modal'))closeModal();};
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();});
+
+// Wischen nach unten zum Schließen (Touchgeräte)
+(function(){
+  const box=document.querySelector('.modal-box');
+  let startY=null, atTop=true;
+  box.addEventListener('touchstart',e=>{
+    if(e.touches.length!==1){ startY=null; return; }
+    atTop = box.scrollTop<=0;
+    startY=e.touches[0].clientY;
+  },{passive:true});
+  box.addEventListener('touchmove',e=>{
+    if(startY===null || !atTop) return;
+    const dy=e.touches[0].clientY-startY;
+    if(dy>0) box.style.transform='translateY('+Math.min(dy,140)+'px)';
+  },{passive:true});
+  box.addEventListener('touchend',e=>{
+    if(startY===null){ box.style.transform=''; return; }
+    const dy=(e.changedTouches[0]?.clientY||startY)-startY;
+    box.style.transition='transform .2s';
+    box.style.transform='';
+    setTimeout(()=>box.style.transition='',200);
+    if(atTop && dy>90) closeModal();
+    startY=null;
+  },{passive:true});
+})();
 
 async function download(r,btn){
   btn.disabled=true;
