@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#0a0e14">
+<link rel="manifest" href='data:application/manifest+json,{"name":"Dateiablage","short_name":"Dateiablage","start_url":".","display":"standalone","background_color":"%230a0e14","theme_color":"%230a0e14","icons":[{"src":"data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Crect width=%22100%22 height=%22100%22 rx=%2222%22 fill=%22%2310b981%22/%3E%3Cpath d=%22M50 28v30m0 0l-12-12m12 12l12-12M30 68h40%22 stroke=%22%230a0e14%22 stroke-width=%227%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22 fill=%22none%22/%3E%3C/svg%3E","sizes":"any","type":"image/svg+xml"}]}'>
+<title>Dateiablage</title>
+<style>
+  :root{
+    --bg:#0a0e14; --panel:#121823; --panel-2:#0f141d; --border:#1e2733;
+    --text:#e4e9f0; --muted:#7c8aa0; --accent:#10b981; --accent-soft:rgba(16,185,129,.12);
+    --danger:#ef4444; --radius:14px;
+    --font:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    --mono:'SF Mono',ui-monospace,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh;line-height:1.5;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:880px;margin:0 auto;padding:28px 18px 60px}
+  header{display:flex;align-items:center;gap:12px;margin-bottom:24px}
+  .logo{width:42px;height:42px;border-radius:12px;background:var(--accent);display:grid;place-items:center;flex-shrink:0}
+  .logo svg{width:24px;height:24px}
+  h1{font-size:22px;font-weight:700;letter-spacing:-.3px}
+  .sub{color:var(--muted);font-size:13px}
+  .spacer{flex:1}
+  .userbox{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--muted)}
+  .ghost{background:var(--panel-2);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:10px;cursor:pointer;font-size:13px;transition:.15s}
+  .ghost:hover{border-color:var(--accent);color:var(--accent)}
+  .hidden{display:none!important}
+
+  /* Auth */
+  .auth{max-width:400px;margin:50px auto 0;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:26px}
+  .tabs{display:flex;gap:6px;background:var(--panel-2);border:1px solid var(--border);border-radius:11px;padding:4px;margin-bottom:20px}
+  .tab{flex:1;text-align:center;padding:9px;border-radius:8px;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer;transition:.15s}
+  .tab.on{background:var(--accent);color:#06231a}
+  .auth h2{font-size:18px;margin-bottom:4px}
+  .auth p.lead{color:var(--muted);font-size:13px;margin-bottom:18px}
+  .field{margin-bottom:12px}
+  .field label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px}
+  .field input{width:100%;background:var(--panel-2);border:1px solid var(--border);color:var(--text);padding:11px 12px;border-radius:10px;font-size:14px;outline:none;font-family:inherit}
+  .field input:focus{border-color:var(--accent)}
+  .field input.code{font-family:var(--mono);letter-spacing:2px;text-transform:uppercase;text-align:center;font-size:18px}
+  .primary{width:100%;background:var(--accent);color:#06231a;border:none;padding:12px;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;margin-top:4px;transition:.15s}
+  .primary:hover{filter:brightness(1.08)}
+  .primary:disabled{opacity:.6;cursor:default}
+  .msg{font-size:13px;border-radius:8px;padding:9px 11px;margin-bottom:12px}
+  .msg.err{background:rgba(239,68,68,.1);color:#fca5a5;border:1px solid rgba(239,68,68,.3)}
+  .msg.ok{background:var(--accent-soft);color:var(--accent);border:1px solid rgba(16,185,129,.3)}
+
+  .drop{border:2px dashed var(--border);border-radius:var(--radius);padding:38px 20px;text-align:center;background:var(--panel-2);cursor:pointer;transition:.18s}
+  .drop:hover{border-color:var(--accent);background:var(--accent-soft)}
+  .drop.over{border-color:var(--accent);background:var(--accent-soft)}
+  .drop svg{width:38px;height:38px;color:var(--accent);margin-bottom:10px}
+  .drop .big{font-size:16px;font-weight:600}
+  .drop .small{color:var(--muted);font-size:13px;margin-top:4px}
+  .progress{height:5px;background:var(--bg);border-radius:4px;overflow:hidden;margin-top:14px;display:none}
+  .progress.show{display:block}
+  .progress span{display:block;height:100%;background:var(--accent);width:0;transition:width .15s}
+  .uploading-name{font-size:12px;color:var(--muted);margin-top:6px;text-align:center}
+
+  .viewer-note{background:var(--accent-soft);border:1px solid rgba(16,185,129,.25);color:var(--text);border-radius:var(--radius);padding:14px 16px;font-size:13px;line-height:1.6}
+
+  .meta{display:flex;justify-content:space-between;align-items:center;margin:26px 2px 12px}
+  .meta h2{font-size:14px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+  .count{font-size:13px;color:var(--muted)}
+
+  .list{display:flex;flex-direction:column;gap:10px}
+  .item{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:12px;display:flex;align-items:center;gap:12px}
+  .thumb{width:46px;height:46px;border-radius:10px;background:var(--panel-2);display:grid;place-items:center;flex-shrink:0;overflow:hidden}
+  .thumb img{width:100%;height:100%;object-fit:cover}
+  .thumb svg{width:22px;height:22px;color:var(--accent)}
+  .info{flex:1;min-width:0}
+  .name{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .size{font-size:12px;color:var(--muted)}
+  .actions{display:flex;gap:6px;flex-shrink:0}
+  .btn{background:var(--panel-2);color:var(--text);border:1px solid var(--border);width:38px;height:38px;border-radius:10px;cursor:pointer;display:grid;place-items:center;transition:.15s}
+  .btn:hover{border-color:var(--accent);color:var(--accent)}
+  .btn.del:hover{border-color:var(--danger);color:var(--danger)}
+  .btn svg{width:18px;height:18px}
+  .btn:disabled{opacity:.5;cursor:default}
+  .empty,.loading{text-align:center;color:var(--muted);padding:30px;font-size:14px}
+
+  /* Admin panel */
+  .admin-bar{display:flex;gap:8px;margin-bottom:18px}
+  .seg{flex:1;background:var(--panel-2);border:1px solid var(--border);color:var(--muted);padding:10px;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;transition:.15s}
+  .seg.on{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:18px;margin-bottom:16px}
+  .card h3{font-size:14px;margin-bottom:12px}
+  .row-inline{display:flex;gap:8px;flex-wrap:wrap}
+  .row-inline input{flex:1;min-width:140px;background:var(--panel-2);border:1px solid var(--border);color:var(--text);padding:10px 12px;border-radius:10px;font-size:14px;outline:none}
+  .row-inline input:focus{border-color:var(--accent)}
+  .btn-sm{background:var(--accent);color:#06231a;border:none;padding:10px 16px;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap}
+  .btn-sm.alt{background:var(--panel-2);color:var(--text);border:1px solid var(--border)}
+  .code-list{display:flex;flex-direction:column;gap:8px;margin-top:14px}
+  .code-row{display:flex;align-items:center;gap:10px;background:var(--panel-2);border:1px solid var(--border);border-radius:10px;padding:10px 12px}
+  .code-val{font-family:var(--mono);font-size:15px;letter-spacing:1px;font-weight:600}
+  .code-meta{font-size:12px;color:var(--muted)}
+  .code-row.off .code-val{color:var(--muted);text-decoration:line-through}
+  .pill{font-size:11px;padding:2px 8px;border-radius:20px;font-weight:600}
+  .pill.on{background:var(--accent-soft);color:var(--accent)}
+  .pill.off{background:rgba(239,68,68,.12);color:#fca5a5}
+  .mini{background:none;border:1px solid var(--border);color:var(--muted);width:32px;height:32px;border-radius:8px;cursor:pointer;display:grid;place-items:center}
+  .mini:hover{color:var(--text);border-color:var(--accent)}
+  .mini.del:hover{color:var(--danger);border-color:var(--danger)}
+  .mini svg{width:15px;height:15px}
+  .newcode{background:var(--accent-soft);border:1px solid rgba(16,185,129,.4);border-radius:10px;padding:14px;text-align:center;margin-top:12px}
+  .newcode .big{font-family:var(--mono);font-size:24px;letter-spacing:3px;font-weight:700;color:var(--accent)}
+  .newcode .small{font-size:12px;color:var(--muted);margin-top:4px}
+
+  /* Modal */
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.85);display:none;align-items:center;justify-content:center;padding:18px;z-index:50}
+  .modal.show{display:flex}
+  .modal-box{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);max-width:860px;width:100%;max-height:90vh;overflow:auto}
+  .modal-head{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid var(--border)}
+  .modal-head .name{font-size:14px}
+  .modal-body{padding:16px;display:grid;place-items:center;min-height:120px}
+  .modal-body video,.modal-body img,.modal-body audio{max-width:100%;max-height:70vh;border-radius:10px}
+  .closeX{background:none;border:none;color:var(--muted);cursor:pointer;font-size:22px;line-height:1;padding:4px 8px}
+  .closeX:hover{color:var(--text)}
+
+  footer{margin-top:48px;border-top:1px solid var(--border);padding-top:20px;font-size:12px;color:var(--muted);line-height:1.7}
+  .donate{display:inline-flex;align-items:center;gap:7px;background:#0070ba;color:#fff;padding:9px 16px;border-radius:10px;text-decoration:none;font-weight:600;font-size:13px;margin:14px 0}
+  .donate:hover{background:#005a96}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#0a0e14" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v12m0-12l-4 4m4-4l4 4"/><path d="M5 18h14"/></svg>
+    </div>
+    <div>
+      <h1>Dateiablage</h1>
+      <div class="sub">Hochladen, ansehen, herunterladen</div>
+    </div>
+    <div class="spacer"></div>
+    <div class="userbox hidden" id="userbox">
+      <span id="roleLabel"></span>
+      <button class="ghost" id="logoutBtn">Abmelden</button>
+    </div>
+  </header>
+
+  <!-- AUTH -->
+  <section class="auth" id="authView">
+    <div class="tabs">
+      <div class="tab on" id="tabUser">Mit Code</div>
+      <div class="tab" id="tabAdmin">Admin</div>
+    </div>
+
+    <!-- User code login -->
+    <div id="userLogin">
+      <h2>Zugang mit Code</h2>
+      <p class="lead">Gib den Code ein, den du erhalten hast.</p>
+      <div id="userMsg"></div>
+      <div class="field">
+        <label for="code">Zugangscode</label>
+        <input type="text" id="code" class="code" maxlength="9" placeholder="XXXX-XXXX" autocomplete="off">
+      </div>
+      <button class="primary" id="userBtn">Zugang öffnen</button>
+    </div>
+
+    <!-- Admin login -->
+    <div id="adminLogin" class="hidden">
+      <h2>Admin-Anmeldung</h2>
+      <p class="lead">Melde dich mit dem Admin-Passwort an.</p>
+      <div id="adminMsg"></div>
+      <div class="field">
+        <label for="adminPw">Admin-Passwort</label>
+        <input type="password" id="adminPw" autocomplete="current-password" placeholder="••••••••">
+      </div>
+      <button class="primary" id="adminBtn">Anmelden</button>
+    </div>
+  </section>
+
+  <!-- APP -->
+  <section class="hidden" id="appView">
+    <!-- Admin segmented nav -->
+    <div class="admin-bar hidden" id="adminBar">
+      <button class="seg on" id="segFiles">Dateien</button>
+      <button class="seg" id="segCodes">Zugangscodes</button>
+      <button class="seg" id="segSettings">Einstellungen</button>
+    </div>
+
+    <!-- Files page -->
+    <div id="pageFiles">
+      <div class="drop hidden" id="drop">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0-12l-4 4m4-4l4 4"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
+        <div class="big">Dateien hierher ziehen oder klicken</div>
+        <div class="small">Videos, Bilder, Audio, PDFs – bis 500 MB pro Datei</div>
+        <input type="file" id="file" multiple hidden>
+        <div class="progress" id="progress"><span id="progressBar"></span></div>
+        <div class="uploading-name" id="uploadingName"></div>
+      </div>
+
+      <div class="viewer-note hidden" id="viewerNote">
+        Hier findest du alle bereitgestellten Dateien. Tippe auf <strong>Abspielen</strong> für die Vorschau oder auf das Download-Symbol, um zu speichern.
+      </div>
+
+      <div class="meta">
+        <h2>Dateien</h2>
+        <span class="count" id="count"></span>
+      </div>
+      <div class="list" id="list">
+        <div class="loading">Lade Dateien…</div>
+      </div>
+    </div>
+
+    <!-- Codes page (admin) -->
+    <div id="pageCodes" class="hidden">
+      <div class="card">
+        <h3>Neuen Zugangscode erstellen</h3>
+        <div class="row-inline">
+          <input type="text" id="codeLabel" placeholder="Bezeichnung (optional, z. B. Name)">
+          <button class="btn-sm" id="genCodeBtn">Code generieren</button>
+        </div>
+        <div id="newCodeBox"></div>
+      </div>
+      <div class="card">
+        <h3>Vorhandene Codes</h3>
+        <div class="code-list" id="codeList"><div class="loading">Lade…</div></div>
+      </div>
+    </div>
+
+    <!-- Settings page (admin) -->
+    <div id="pageSettings" class="hidden">
+      <div class="card">
+        <h3>Admin-Passwort ändern</h3>
+        <div id="pwMsg"></div>
+        <div class="field"><label>Aktuelles Passwort</label><input type="password" id="oldPw" placeholder="••••••••"></div>
+        <div class="field"><label>Neues Passwort (min. 6 Zeichen)</label><input type="password" id="newPw" placeholder="••••••••"></div>
+        <div class="field"><label>Neues Passwort wiederholen</label><input type="password" id="newPw2" placeholder="••••••••"></div>
+        <button class="btn-sm" id="changePwBtn">Passwort ändern</button>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <a class="donate" href="https://paypal.me/AlexanderGlauche" target="_blank" rel="noopener">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="#fff"><path d="M7.5 21h3l.5-3h2.5c3.3 0 5.5-2 6-5 .4-2.5-1-4-3.8-4H10L7.5 21zm3.8-9h2c1.2 0 1.8.6 1.6 1.7-.2 1.3-1.2 2.3-2.6 2.3h-1.5l.5-4z"/></svg>
+      Spende via PayPal
+    </a>
+    <div><strong>Impressum</strong><br>
+    Alexander Scherer · Mertensstraße 18, 13587 Berlin<br>
+    info@alexander-scherer.com · Kleingewerbe Fotograf §19 UStG</div>
+  </footer>
+</div>
+
+<div class="modal" id="modal">
+  <div class="modal-box">
+    <div class="modal-head">
+      <span class="name" id="mName"></span>
+      <button class="closeX" id="closeX">&times;</button>
+    </div>
+    <div class="modal-body" id="mBody"></div>
+  </div>
+</div>
+
+<script>
+const FN_URL = 'https://ugitunttmvswyxmyhnjb.supabase.co/functions/v1/dateiablage';
+const ANON = 'sb_publishable_WFqUr8SpoeBtZDHaGq5dlQ_VWBhJzT8';
+const $ = id => document.getElementById(id);
+let token = sessionStorage.getItem('da_token') || null;
+let role = sessionStorage.getItem('da_role') || null;
+
+async function api(action, body){
+  const res = await fetch(FN_URL, {
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+ANON,'apikey':ANON},
+    body: JSON.stringify({ action, token, ...body })
+  });
+  const data = await res.json().catch(()=>({error:'Serverfehler'}));
+  if(!res.ok) throw new Error(data.error || ('Fehler '+res.status));
+  return data;
+}
+
+/* ---------- Helpers ---------- */
+function fmtSize(b){
+  if(b<1024) return b+' B';
+  if(b<1048576) return (b/1024).toFixed(1)+' KB';
+  if(b<1073741824) return (b/1048576).toFixed(1)+' MB';
+  return (b/1073741824).toFixed(2)+' GB';
+}
+function kind(t){ t=t||''; if(t.startsWith('video/'))return'video'; if(t.startsWith('image/'))return'image'; if(t.startsWith('audio/'))return'audio'; return'other'; }
+function icon(k){
+  const p={video:'<path d="M4 6h12v12H4z"/><path d="M16 9l4-2v10l-4-2"/>',image:'<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="M21 16l-5-5L5 20"/>',audio:'<path d="M9 18V5l10-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="16" cy="16" r="3"/>',other:'<path d="M14 3v5h5"/><path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V8z"/>'};
+  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+p[k]+'</svg>';
+}
+function escapeHtml(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function setMsg(id,text,type){ $(id).innerHTML = text?'<div class="msg '+type+'">'+escapeHtml(text)+'</div>':''; }
+function fmtDate(s){ if(!s)return'–'; const d=new Date(s); return d.toLocaleDateString('de-DE')+' '+d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}); }
+
+/* ---------- Auth ---------- */
+$('tabUser').onclick=()=>switchTab('user');
+$('tabAdmin').onclick=()=>switchTab('admin');
+function switchTab(t){
+  $('tabUser').classList.toggle('on',t==='user');
+  $('tabAdmin').classList.toggle('on',t==='admin');
+  $('userLogin').classList.toggle('hidden',t!=='user');
+  $('adminLogin').classList.toggle('hidden',t!=='admin');
+}
+
+$('code').addEventListener('input',e=>{
+  let v=e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,'');
+  if(v.length>4) v=v.slice(0,4)+'-'+v.slice(4,8);
+  e.target.value=v;
+});
+$('userBtn').onclick=loginUser;
+$('code').addEventListener('keydown',e=>{if(e.key==='Enter')loginUser();});
+async function loginUser(){
+  const code=$('code').value.trim();
+  if(!code){ setMsg('userMsg','Bitte einen Code eingeben.','err'); return; }
+  $('userBtn').disabled=true;
+  try{
+    const r=await api('login_code',{code});
+    token=r.token; role=r.role; persist(); onLogin();
+  }catch(e){ setMsg('userMsg',e.message,'err'); }
+  finally{ $('userBtn').disabled=false; }
+}
+
+$('adminBtn').onclick=loginAdmin;
+$('adminPw').addEventListener('keydown',e=>{if(e.key==='Enter')loginAdmin();});
+async function loginAdmin(){
+  const password=$('adminPw').value;
+  if(!password){ setMsg('adminMsg','Bitte das Passwort eingeben.','err'); return; }
+  $('adminBtn').disabled=true;
+  try{
+    const r=await api('login_admin',{password});
+    token=r.token; role=r.role; persist(); onLogin();
+  }catch(e){ setMsg('adminMsg',e.message,'err'); }
+  finally{ $('adminBtn').disabled=false; }
+}
+
+function persist(){ sessionStorage.setItem('da_token',token); sessionStorage.setItem('da_role',role); }
+function clearSession(){ token=null; role=null; sessionStorage.removeItem('da_token'); sessionStorage.removeItem('da_role'); }
+
+$('logoutBtn').onclick=()=>{ clearSession(); onLogout(); };
+
+function onLogin(){
+  const isAdmin = role==='admin';
+  $('authView').classList.add('hidden');
+  $('appView').classList.remove('hidden');
+  $('userbox').classList.remove('hidden');
+  $('roleLabel').textContent = isAdmin?'Admin':'Nutzer';
+  $('adminBar').classList.toggle('hidden',!isAdmin);
+  $('drop').classList.toggle('hidden',!isAdmin);
+  $('viewerNote').classList.toggle('hidden',isAdmin);
+  showPage('files');
+  loadFiles();
+}
+function onLogout(){
+  $('appView').classList.add('hidden');
+  $('userbox').classList.add('hidden');
+  $('authView').classList.remove('hidden');
+  $('code').value=''; $('adminPw').value='';
+  setMsg('userMsg',''); setMsg('adminMsg','');
+  switchTab('user');
+}
+
+/* ---------- Admin nav ---------- */
+$('segFiles').onclick=()=>showPage('files');
+$('segCodes').onclick=()=>{showPage('codes');loadCodes();};
+$('segSettings').onclick=()=>showPage('settings');
+function showPage(p){
+  $('pageFiles').classList.toggle('hidden',p!=='files');
+  $('pageCodes').classList.toggle('hidden',p!=='codes');
+  $('pageSettings').classList.toggle('hidden',p!=='settings');
+  $('segFiles').classList.toggle('on',p==='files');
+  $('segCodes').classList.toggle('on',p==='codes');
+  $('segSettings').classList.toggle('on',p==='settings');
+}
+
+/* ---------- Files ---------- */
+async function loadFiles(){
+  $('list').innerHTML='<div class="loading">Lade Dateien…</div>';
+  try{
+    const {files}=await api('list',{});
+    renderFiles(files||[]);
+  }catch(e){
+    if(/Nicht angemeldet/.test(e.message)){ clearSession(); onLogout(); return; }
+    $('list').innerHTML='<div class="empty">Fehler: '+escapeHtml(e.message)+'</div>';
+  }
+}
+function renderFiles(rows){
+  const isAdmin=role==='admin';
+  $('count').textContent=rows.length+(rows.length===1?' Datei':' Dateien');
+  const list=$('list');
+  if(rows.length===0){ list.innerHTML='<div class="empty">Noch keine Dateien vorhanden.</div>'; return; }
+  list.innerHTML='';
+  rows.forEach(r=>{
+    const k=kind(r.mime_type), canPreview=k==='video'||k==='image'||k==='audio';
+    const row=document.createElement('div'); row.className='item';
+    row.innerHTML='<div class="thumb" data-thumb>'+icon(k)+'</div>'+
+      '<div class="info"><div class="name" title="'+escapeHtml(r.name)+'">'+escapeHtml(r.name)+'</div><div class="size">'+fmtSize(r.size)+'</div></div>'+
+      '<div class="actions">'+
+      (canPreview?'<button class="btn play" title="Abspielen / Ansehen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 4 20 12 6 20 6 4"/></svg></button>':'')+
+      '<button class="btn dl" title="Herunterladen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M5 21h14"/></svg></button>'+
+      (isAdmin?'<button class="btn del" title="Löschen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14M9 7V5h6v2m-7 0v12a1 1 0 001 1h6a1 1 0 001-1V7"/></svg></button>':'')+
+      '</div>';
+    if(k==='image') loadThumb(r.id,row.querySelector('[data-thumb]'));
+    if(canPreview) row.querySelector('.play').onclick=()=>preview(r,k);
+    row.querySelector('.dl').onclick=e=>download(r,e.currentTarget);
+    if(isAdmin) row.querySelector('.del').onclick=e=>removeFile(r,e.currentTarget);
+    list.appendChild(row);
+  });
+}
+async function loadThumb(id,el){
+  try{ const {url}=await api('signed_url',{id}); el.innerHTML='<img src="'+url+'" alt="">'; }catch(_){}
+}
+async function preview(r,k){
+  $('mName').textContent=r.name;
+  $('mBody').innerHTML='<div style="color:var(--muted);font-size:13px">Lädt…</div>';
+  $('modal').classList.add('show');
+  try{
+    const {url}=await api('signed_url',{id:r.id});
+    let el;
+    if(k==='video'){el=document.createElement('video');el.controls=true;el.autoplay=true;el.src=url;}
+    else if(k==='image'){el=document.createElement('img');el.src=url;}
+    else{el=document.createElement('audio');el.controls=true;el.autoplay=true;el.src=url;}
+    $('mBody').innerHTML=''; $('mBody').appendChild(el);
+  }catch(e){ $('mBody').innerHTML='<div style="color:#fca5a5;font-size:13px">Fehler: '+escapeHtml(e.message)+'</div>'; }
+}
+function closeModal(){ const v=$('mBody').querySelector('video,audio'); if(v)v.pause(); $('mBody').innerHTML=''; $('modal').classList.remove('show'); }
+$('closeX').onclick=closeModal;
+$('modal').onclick=e=>{if(e.target===$('modal'))closeModal();};
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();});
+
+async function download(r,btn){
+  btn.disabled=true;
+  try{
+    const {url}=await api('signed_url',{id:r.id,download:true});
+    const a=document.createElement('a'); a.href=url; a.download=r.name; a.click();
+  }catch(e){ alert('Download fehlgeschlagen: '+e.message); }
+  finally{ btn.disabled=false; }
+}
+async function removeFile(r,btn){
+  if(!confirm('"'+r.name+'" wirklich löschen?')) return;
+  btn.disabled=true;
+  try{ await api('delete_file',{id:r.id}); loadFiles(); }
+  catch(e){ alert('Löschen fehlgeschlagen: '+e.message); btn.disabled=false; }
+}
+
+/* ---------- Upload (Admin) ---------- */
+const drop=$('drop'),input=$('file');
+drop.onclick=e=>{ if(e.target.closest('.progress'))return; input.click(); };
+input.onchange=e=>{ uploadFiles(e.target.files); input.value=''; };
+drop.addEventListener('dragover',e=>{e.preventDefault();drop.classList.add('over');});
+drop.addEventListener('dragleave',()=>drop.classList.remove('over'));
+drop.addEventListener('drop',e=>{e.preventDefault();drop.classList.remove('over');uploadFiles(e.dataTransfer.files);});
+
+async function uploadFiles(fileList){
+  const items=[...fileList]; if(!items.length)return;
+  $('progress').classList.add('show');
+  for(let i=0;i<items.length;i++){
+    const file=items[i];
+    $('uploadingName').textContent='Lade hoch: '+file.name+' ('+(i+1)+'/'+items.length+')';
+    $('progressBar').style.width=(i/items.length*100)+'%';
+    try{
+      const {path,token:upToken,signedUrl}=await api('upload_url',{name:file.name});
+      const base='https://ugitunttmvswyxmyhnjb.supabase.co';
+      let target;
+      if(signedUrl && /^https?:\/\//.test(signedUrl)) target=signedUrl;
+      else if(signedUrl) target=base+(signedUrl.startsWith('/')?signedUrl:'/'+signedUrl);
+      else target=base+'/storage/v1/object/upload/sign/dateiablage/'+path+'?token='+encodeURIComponent(upToken);
+      const up=await fetch(target,{
+        method:'PUT',
+        headers:{'Content-Type':file.type||'application/octet-stream'},
+        body:file
+      });
+      if(!up.ok){ const t=await up.text().catch(()=> ''); alert('Upload fehlgeschlagen: '+file.name+'\n'+t); continue; }
+      await api('register_file',{name:file.name,path,size:file.size,mime_type:file.type||null});
+    }catch(e){ alert('Fehler bei '+file.name+': '+e.message); }
+    $('progressBar').style.width=((i+1)/items.length*100)+'%';
+  }
+  setTimeout(()=>{$('progress').classList.remove('show');$('progressBar').style.width='0';$('uploadingName').textContent='';},400);
+  loadFiles();
+}
+
+/* ---------- Codes (Admin) ---------- */
+$('genCodeBtn').onclick=async()=>{
+  $('genCodeBtn').disabled=true;
+  try{
+    const label=$('codeLabel').value.trim();
+    const {code}=await api('create_code',{label:label||null});
+    $('codeLabel').value='';
+    $('newCodeBox').innerHTML='<div class="newcode"><div class="big">'+code+'</div><div class="small">Code wurde erstellt – gib ihn an den Nutzer weiter.</div></div>';
+    loadCodes();
+  }catch(e){ alert('Fehler: '+e.message); }
+  finally{ $('genCodeBtn').disabled=false; }
+};
+async function loadCodes(){
+  $('codeList').innerHTML='<div class="loading">Lade…</div>';
+  try{
+    const {codes}=await api('list_codes',{});
+    renderCodes(codes||[]);
+  }catch(e){ $('codeList').innerHTML='<div class="empty">Fehler: '+escapeHtml(e.message)+'</div>'; }
+}
+function renderCodes(codes){
+  if(codes.length===0){ $('codeList').innerHTML='<div class="empty">Noch keine Codes erstellt.</div>'; return; }
+  $('codeList').innerHTML='';
+  codes.forEach(c=>{
+    const row=document.createElement('div'); row.className='code-row'+(c.active?'':' off');
+    row.innerHTML='<div style="flex:1;min-width:0">'+
+      '<div class="code-val">'+escapeHtml(c.code)+'</div>'+
+      '<div class="code-meta">'+(c.label?escapeHtml(c.label)+' · ':'')+'erstellt '+fmtDate(c.created_at)+' · zuletzt genutzt '+fmtDate(c.last_used_at)+'</div></div>'+
+      '<span class="pill '+(c.active?'on':'off')+'">'+(c.active?'aktiv':'gesperrt')+'</span>'+
+      '<button class="mini toggle" title="'+(c.active?'Sperren':'Aktivieren')+'">'+(c.active
+        ?'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg>'
+        :'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 017-2.8"/></svg>')+'</button>'+
+      '<button class="mini del" title="Löschen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14M9 7V5h6v2m-7 0v12a1 1 0 001 1h6a1 1 0 001-1V7"/></svg></button>';
+    row.querySelector('.toggle').onclick=async()=>{ try{ await api('toggle_code',{code:c.code,active:!c.active}); loadCodes(); }catch(e){ alert(e.message); } };
+    row.querySelector('.del').onclick=async()=>{ if(!confirm('Code '+c.code+' löschen?'))return; try{ await api('delete_code',{code:c.code}); loadCodes(); }catch(e){ alert(e.message); } };
+    $('codeList').appendChild(row);
+  });
+}
+
+/* ---------- Passwort ändern (Admin) ---------- */
+$('changePwBtn').onclick=async()=>{
+  const o=$('oldPw').value, n=$('newPw').value, n2=$('newPw2').value;
+  if(!o||!n){ setMsg('pwMsg','Bitte alle Felder ausfüllen.','err'); return; }
+  if(n!==n2){ setMsg('pwMsg','Die neuen Passwörter stimmen nicht überein.','err'); return; }
+  if(n.length<6){ setMsg('pwMsg','Neues Passwort muss mindestens 6 Zeichen haben.','err'); return; }
+  $('changePwBtn').disabled=true;
+  try{
+    await api('change_password',{old_password:o,new_password:n});
+    setMsg('pwMsg','Passwort erfolgreich geändert.','ok');
+    $('oldPw').value=''; $('newPw').value=''; $('newPw2').value='';
+  }catch(e){ setMsg('pwMsg',e.message,'err'); }
+  finally{ $('changePwBtn').disabled=false; }
+};
+
+/* ---------- Session restore ---------- */
+if(token && role){ onLogin(); } else { switchTab('user'); }
+</script>
+</body>
+</html>
