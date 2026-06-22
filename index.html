@@ -3,6 +3,44 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- coi-serviceworker: aktiviert Cross-Origin-Isolation (für ffmpeg.wasm) auch auf statischem Hosting wie GitHub Pages -->
+<script>
+(function(){
+  // Auf Mobilgeräten nicht nötig (dort keine Video-Komprimierung) und vermeidet unnötiges Neuladen
+  var isMobile=/Android|iPhone|iPad|iPod|Mobile|Tablet|Silk|Kindle/i.test(navigator.userAgent);
+  if(isMobile) return;
+  if(window.crossOriginIsolated) return; // schon isoliert -> nichts tun
+  if(!window.isSecureContext || !('serviceWorker' in navigator)) return;
+  var swCode = `
+    self.addEventListener('install', () => self.skipWaiting());
+    self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
+    self.addEventListener('fetch', function(event){
+      if(event.request.cache==='only-if-cached' && event.request.mode!=='same-origin') return;
+      event.respondWith(fetch(event.request).then(function(response){
+        if(response.status===0) return response;
+        var headers=new Headers(response.headers);
+        headers.set('Cross-Origin-Embedder-Policy','require-corp');
+        headers.set('Cross-Origin-Opener-Policy','same-origin');
+        return new Response(response.body,{status:response.status,statusText:response.statusText,headers:headers});
+      }).catch(function(e){ return new Response('Netzwerkfehler',{status:500}); }));
+    });
+  `;
+  var blob=new Blob([swCode],{type:'text/javascript'});
+  var url=URL.createObjectURL(blob);
+  navigator.serviceWorker.register(url).then(function(reg){
+    reg.addEventListener('updatefound',function(){ /* noop */ });
+    // Wenn der SW jetzt aktiv ist, aber die Seite noch nicht isoliert -> einmal neu laden
+    if(navigator.serviceWorker.controller){
+      // bereits kontrolliert, beim nächsten Load greift Isolation
+    } else {
+      reg.active || reg.installing || reg.waiting;
+      navigator.serviceWorker.ready.then(function(){
+        if(!window.crossOriginIsolated){ window.location.reload(); }
+      });
+    }
+  }).catch(function(){ /* still: Komprimierung meldet sich später, falls nicht verfügbar */ });
+})();
+</script>
 <meta name="theme-color" content="#0a0e14">
 <link rel="manifest" href='data:application/manifest+json,{"name":"Dateiablage","short_name":"Dateiablage","start_url":".","display":"standalone","background_color":"%230a0e14","theme_color":"%230a0e14","icons":[{"src":"data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Crect width=%22100%22 height=%22100%22 rx=%2222%22 fill=%22%2310b981%22/%3E%3Cpath d=%22M50 28v30m0 0l-12-12m12 12l12-12M30 68h40%22 stroke=%22%230a0e14%22 stroke-width=%227%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22 fill=%22none%22/%3E%3C/svg%3E","sizes":"any","type":"image/svg+xml"}]}'>
 <title>Dateiablage</title>
@@ -80,10 +118,44 @@
   .new-folder-row input:focus{border-color:var(--accent)}
   .upload-target{font-size:12px;color:var(--muted);margin-bottom:10px}
   .upload-target strong{color:var(--accent)}
+  /* Video-Komprimierung */
+  .vid-opts{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin-bottom:14px}
+  .vid-opts h3{font-size:13px;margin-bottom:4px}
+  .vid-opts p{font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.5}
+  .quality-row{display:flex;gap:8px;flex-wrap:wrap}
+  .q-opt{flex:1;min-width:90px;background:var(--panel-2);border:1px solid var(--border);color:var(--text);border-radius:10px;padding:10px;cursor:pointer;text-align:center;transition:.15s}
+  .q-opt.on{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
+  .q-opt .ql{font-size:13px;font-weight:600}
+  .q-opt .qd{font-size:11px;color:var(--muted);margin-top:2px}
+  .q-opt.on .qd{color:var(--accent)}
+  .mobile-note{background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.25);color:#fca5a5;border-radius:10px;padding:11px 13px;font-size:12px;line-height:1.5;margin-bottom:14px}
 
   .meta{display:flex;justify-content:space-between;align-items:center;margin:26px 2px 12px}
   .meta h2{font-size:14px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
   .count{font-size:13px;color:var(--muted)}
+  /* Suche */
+  .search-wrap{position:relative;margin:4px 0 4px}
+  .search-wrap svg.si{position:absolute;left:13px;top:50%;transform:translateY(-50%);width:18px;height:18px;color:var(--muted);pointer-events:none}
+  .search-wrap input{width:100%;background:var(--panel-2);border:1px solid var(--border);color:var(--text);padding:12px 40px 12px 40px;border-radius:11px;font-size:14px;outline:none;font-family:inherit}
+  .search-wrap input:focus{border-color:var(--accent)}
+  .search-clear{position:absolute;right:8px;top:50%;transform:translateY(-50%);background:var(--panel);border:1px solid var(--border);color:var(--muted);width:28px;height:28px;border-radius:8px;cursor:pointer;display:none;place-items:center}
+  .search-clear.show{display:grid}
+  .search-clear:hover{color:var(--text);border-color:var(--accent)}
+  .search-clear svg{width:14px;height:14px}
+  .file-folder-tag{font-size:11px;color:var(--accent);background:var(--accent-soft);border-radius:8px;padding:1px 7px;margin-left:6px;white-space:nowrap}
+  /* Filter */
+  .filters{display:flex;flex-wrap:wrap;gap:7px;align-items:center;margin:10px 0 2px}
+  .filter-chip{display:inline-flex;align-items:center;gap:6px;background:var(--panel);border:1px solid var(--border);color:var(--text);border-radius:20px;padding:7px 13px;cursor:pointer;font-size:13px;transition:.15s;user-select:none}
+  .filter-chip:hover{border-color:var(--accent)}
+  .filter-chip.on{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
+  .filter-chip svg{width:14px;height:14px}
+  .filter-sep{width:1px;align-self:stretch;background:var(--border);margin:2px 4px}
+  .date-filter{display:inline-flex;align-items:center;gap:6px}
+  .date-filter input{background:var(--panel);border:1px solid var(--border);color:var(--text);border-radius:10px;padding:7px 10px;font-size:12px;outline:none;font-family:inherit;color-scheme:dark}
+  .date-filter input:focus{border-color:var(--accent)}
+  .date-filter span{font-size:12px;color:var(--muted)}
+  .filters-reset{background:none;border:none;color:var(--muted);font-size:12px;cursor:pointer;text-decoration:underline;padding:4px}
+  .filters-reset:hover{color:var(--accent)}
 
   .list{display:flex;flex-direction:column;gap:10px}
   .item{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:12px;display:flex;align-items:center;gap:12px}
@@ -230,10 +302,25 @@
       </div>
       <div class="folders" id="folders"><div class="loading" style="padding:8px">Lade…</div></div>
 
+      <div class="vid-opts hidden" id="vidOpts">
+        <h3>Video-Komprimierung</h3>
+        <p>Videos werden vor dem Hochladen im Browser verkleinert (läuft lokal auf diesem Gerät). Wähle die Zielqualität:</p>
+        <div class="quality-row" id="qualityRow">
+          <div class="q-opt" data-q="none"><div class="ql">Original</div><div class="qd">keine Komprimierung</div></div>
+          <div class="q-opt on" data-q="720"><div class="ql">720p</div><div class="qd">empfohlen</div></div>
+          <div class="q-opt" data-q="480"><div class="ql">480p</div><div class="qd">kleinste Datei</div></div>
+        </div>
+        <div id="coiStatus" style="font-size:12px;margin-top:10px"></div>
+      </div>
+
+      <div class="mobile-note hidden" id="mobileNote">
+        Auf Smartphones und Tablets ist das Hochladen von Videos deaktiviert, weil die Komprimierung zu viel Rechenleistung braucht. Bitte lade Videos am PC hoch. Bilder, PDF, Word und Audio kannst du hier trotzdem hochladen.
+      </div>
+
       <div class="drop hidden" id="drop">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0-12l-4 4m4-4l4 4"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
         <div class="big">Dateien hierher ziehen oder klicken</div>
-        <div class="small">Videos, Bilder, Audio, PDFs – bis 500 MB pro Datei</div>
+        <div class="small" id="dropHint">Videos, Bilder, Audio, PDFs – bis 500 MB pro Datei</div>
         <input type="file" id="file" multiple hidden>
         <div class="progress" id="progress"><span id="progressBar"></span></div>
         <div class="uploading-name" id="uploadingName"></div>
@@ -242,6 +329,28 @@
 
       <div class="viewer-note hidden" id="viewerNote">
         Wähle oben einen Ordner. Tippe bei einer Datei auf <strong>Abspielen</strong> für die Vorschau oder auf das Download-Symbol, um zu speichern.
+      </div>
+
+      <div class="search-wrap">
+        <svg class="si" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+        <input type="text" id="searchInput" placeholder="Dateien durchsuchen…" autocomplete="off">
+        <button class="search-clear" id="searchClear" title="Suche zurücksetzen" aria-label="Suche zurücksetzen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+      </div>
+
+      <div class="filters" id="filters">
+        <div class="filter-chip on" data-type="all">Alle</div>
+        <div class="filter-chip" data-type="video"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h12v12H4z"/><path d="M16 9l4-2v10l-4-2"/></svg>Videos</div>
+        <div class="filter-chip" data-type="image"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="M21 16l-5-5L5 20"/></svg>Bilder</div>
+        <div class="filter-chip" data-type="doc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v5h5"/><path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V8z"/></svg>Dokumente</div>
+        <div class="filter-chip" data-type="audio"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l10-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="16" cy="16" r="3"/></svg>Audio</div>
+        <div class="filter-sep"></div>
+        <div class="date-filter">
+          <span>von</span>
+          <input type="date" id="dateFrom" aria-label="Datum von">
+          <span>bis</span>
+          <input type="date" id="dateTo" aria-label="Datum bis">
+        </div>
+        <button class="filters-reset hidden" id="filtersReset">Filter zurücksetzen</button>
       </div>
 
       <div class="meta">
@@ -317,6 +426,9 @@ let token = sessionStorage.getItem('da_token') || null;
 let role = sessionStorage.getItem('da_role') || null;
 let currentFolder = 'all';   // 'all' = alle Dateien, 'root' = ohne Ordner, sonst Ordner-ID
 let foldersCache = [];       // [{id,name,file_count}]
+let videoQuality = '720';    // '720' | '480' | 'none'
+const IS_MOBILE = /Android|iPhone|iPad|iPod|Mobile|Tablet|Silk|Kindle/i.test(navigator.userAgent)
+  || (('ontouchstart' in window) && Math.min(screen.width, screen.height) < 820);
 
 async function api(action, body){
   const res = await fetch(FN_URL, {
@@ -416,7 +528,23 @@ function onLogin(){
   $('drop').classList.toggle('hidden',!isAdmin);
   $('newFolderRow').classList.toggle('hidden',!isAdmin);
   $('viewerNote').classList.toggle('hidden',isAdmin);
+  // Video-Komprimierung nur für Admin am PC; auf Mobil Hinweis statt Optionen
+  $('vidOpts').classList.toggle('hidden', !(isAdmin && !IS_MOBILE));
+  $('mobileNote').classList.toggle('hidden', !(isAdmin && IS_MOBILE));
+  if(isAdmin && !IS_MOBILE){
+    const ok = (typeof SharedArrayBuffer!=='undefined') && self.crossOriginIsolated;
+    $('coiStatus').innerHTML = ok
+      ? '<span style="color:var(--accent)">✓ Komprimierung aktiv. Beim ersten Video werden einmalig ~30 MB geladen.</span>'
+      : '<span style="color:#fca5a5">⚠ Komprimierung noch nicht aktiv. Lade die Seite einmal neu. Bei „Original" wird ohne Komprimierung hochgeladen.</span>';
+  }
+  $('dropHint').textContent = IS_MOBILE
+    ? 'Bilder, PDF, Word, Audio – Videos nur am PC'
+    : 'Videos, Bilder, Audio, PDFs – bis 500 MB pro Datei';
   currentFolder='all';
+  searchTerm=''; $('searchInput').value=''; $('searchClear').classList.remove('show');
+  filterType='all'; dateFrom=''; dateTo='';
+  document.querySelectorAll('#filters .filter-chip').forEach(c=>c.classList.toggle('on', c.getAttribute('data-type')==='all'));
+  $('dateFrom').value=''; $('dateTo').value=''; $('filtersReset').classList.add('hidden');
   showPage('files');
   loadFolders().then(()=>loadFiles());
 }
@@ -510,6 +638,8 @@ function makeChip(id,name,count,iconHtml,withActions){
 
 function selectFolder(id){
   currentFolder=id;
+  // Suche beim Ordnerwechsel verlassen
+  if(searchTerm){ searchTerm=''; $('searchInput').value=''; $('searchClear').classList.remove('show'); }
   loadFolders();   // aktualisiert Zähler und Markierung
   loadFiles();
   updateUploadTarget();
@@ -548,33 +678,120 @@ async function deleteFolder(id,name){
   }catch(e){ alert('Fehler: '+e.message); }
 }
 
+/* ---------- Suche ---------- */
+let searchTerm='';
+let searchTimer=null;
+$('searchInput').addEventListener('input',e=>{
+  const v=e.target.value;
+  $('searchClear').classList.toggle('show', v.length>0);
+  clearTimeout(searchTimer);
+  searchTimer=setTimeout(()=>{
+    searchTerm=v.trim();
+    loadFiles();
+  },300);
+});
+$('searchInput').addEventListener('keydown',e=>{
+  if(e.key==='Enter'){ clearTimeout(searchTimer); searchTerm=e.target.value.trim(); loadFiles(); }
+  if(e.key==='Escape'){ resetSearch(); }
+});
+$('searchClear').onclick=resetSearch;
+function resetSearch(){
+  $('searchInput').value='';
+  $('searchClear').classList.remove('show');
+  searchTerm='';
+  loadFiles();
+}
+
+/* ---------- Filter (Dateityp + Datum) ---------- */
+let filterType='all';      // 'all' | 'video' | 'image' | 'doc' | 'audio'
+let dateFrom='', dateTo='';
+let lastLoadedFiles=[];     // Rohdaten der zuletzt geladenen Ansicht
+let lastWasSearch=false;
+
+document.querySelectorAll('#filters .filter-chip').forEach(chip=>{
+  chip.onclick=()=>{
+    document.querySelectorAll('#filters .filter-chip').forEach(c=>c.classList.remove('on'));
+    chip.classList.add('on');
+    filterType=chip.getAttribute('data-type');
+    updateFiltersReset();
+    applyFiltersAndRender();
+  };
+});
+$('dateFrom').addEventListener('change',e=>{ dateFrom=e.target.value; updateFiltersReset(); applyFiltersAndRender(); });
+$('dateTo').addEventListener('change',e=>{ dateTo=e.target.value; updateFiltersReset(); applyFiltersAndRender(); });
+$('filtersReset').onclick=resetFilters;
+
+function filtersActive(){ return filterType!=='all' || dateFrom || dateTo; }
+function updateFiltersReset(){ $('filtersReset').classList.toggle('hidden', !filtersActive()); }
+function resetFilters(){
+  filterType='all'; dateFrom=''; dateTo='';
+  document.querySelectorAll('#filters .filter-chip').forEach(c=>c.classList.toggle('on', c.getAttribute('data-type')==='all'));
+  $('dateFrom').value=''; $('dateTo').value='';
+  updateFiltersReset();
+  applyFiltersAndRender();
+}
+function fileMatchesType(r){
+  if(filterType==='all') return true;
+  const k=kind(r.mime_type, r.name);
+  if(filterType==='doc') return k==='doc'||k==='pdf'||k==='other';
+  return k===filterType;
+}
+function fileMatchesDate(r){
+  if(!dateFrom && !dateTo) return true;
+  const d=(r.created_at||'').slice(0,10); // YYYY-MM-DD
+  if(dateFrom && d<dateFrom) return false;
+  if(dateTo && d>dateTo) return false;
+  return true;
+}
+function applyFiltersAndRender(){
+  const filtered=lastLoadedFiles.filter(r=>fileMatchesType(r)&&fileMatchesDate(r));
+  renderFiles(filtered, lastWasSearch, filtersActive());
+}
+
 /* ---------- Files ---------- */
 async function loadFiles(){
-  $('list').innerHTML='<div class="loading">Lade Dateien…</div>';
-  $('filesTitle').textContent=currentFolderName();
+  $('list').innerHTML='<div class="loading">'+(searchTerm?'Suche…':'Lade Dateien…')+'</div>';
   let body={};
-  if(currentFolder==='root') body={folder_id:'root'};
-  else if(currentFolder!=='all') body={folder_id:currentFolder};
+  if(searchTerm){
+    body={q:searchTerm};
+    $('filesTitle').textContent='Suche: „'+searchTerm+'"';
+  }else{
+    $('filesTitle').textContent=currentFolderName();
+    if(currentFolder==='root') body={folder_id:'root'};
+    else if(currentFolder!=='all') body={folder_id:currentFolder};
+  }
   try{
-    const {files}=await api('list',body);
-    renderFiles(files||[]);
+    const {files,search}=await api('list',body);
+    lastLoadedFiles=files||[];
+    lastWasSearch=!!search;
+    applyFiltersAndRender();
   }catch(e){
     if(/Nicht angemeldet/.test(e.message)){ clearSession(); onLogout(); return; }
     $('list').innerHTML='<div class="empty">Fehler: '+escapeHtml(e.message)+'</div>';
   }
 }
-function renderFiles(rows){
+function renderFiles(rows, isSearch, isFiltered){
   const isAdmin=role==='admin';
   $('count').textContent=rows.length+(rows.length===1?' Datei':' Dateien');
   const list=$('list');
-  if(rows.length===0){ list.innerHTML='<div class="empty">Noch keine Dateien vorhanden.</div>'; return; }
+  if(rows.length===0){
+    let msg;
+    if(isSearch) msg='Keine Dateien gefunden für „'+escapeHtml(searchTerm)+'".';
+    else if(isFiltered) msg='Keine Dateien passen zu den gewählten Filtern.';
+    else msg='Noch keine Dateien vorhanden.';
+    list.innerHTML='<div class="empty">'+msg+'</div>';
+    return;
+  }
   list.innerHTML='';
   rows.forEach(r=>{
     const k=kind(r.mime_type,r.name), canPreview=k==='video'||k==='image'||k==='audio'||k==='pdf'||k==='doc';
     const playTitle=(k==='pdf'||k==='doc')?'Öffnen / Ansehen':'Abspielen / Ansehen';
+    const folderTag=(isSearch)
+      ? '<span class="file-folder-tag">'+escapeHtml(r.folder_name || 'Ohne Ordner')+'</span>'
+      : '';
     const row=document.createElement('div'); row.className='item';
     row.innerHTML='<div class="thumb" data-thumb>'+icon(k)+'</div>'+
-      '<div class="info"><div class="name" title="'+escapeHtml(r.name)+'">'+escapeHtml(r.name)+'</div><div class="size">'+fmtSize(r.size)+'</div></div>'+
+      '<div class="info"><div class="name" title="'+escapeHtml(r.name)+'">'+escapeHtml(r.name)+'</div><div class="size">'+fmtSize(r.size)+folderTag+'</div></div>'+
       '<div class="actions">'+
       (canPreview?'<button class="btn play" title="'+playTitle+'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg></button>':'')+
       '<button class="btn dl" title="Herunterladen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M5 21h14"/></svg></button>'+
@@ -718,21 +935,66 @@ function closeMoveModal(){ $('mBody').style.display=''; closeModal(); }
 
 /* ---------- Upload (Admin) ---------- */
 const drop=$('drop'),input=$('file');
+
+// Zielqualität wählen
+document.querySelectorAll('#qualityRow .q-opt').forEach(opt=>{
+  opt.onclick=()=>{
+    document.querySelectorAll('#qualityRow .q-opt').forEach(o=>o.classList.remove('on'));
+    opt.classList.add('on');
+    videoQuality=opt.getAttribute('data-q');
+  };
+});
+
+function isVideo(file){ return (file.type||'').startsWith('video/') || /\.(mp4|mov|m4v|webm|avi|mkv|3gp|wmv|flv)$/i.test(file.name); }
+
 drop.onclick=e=>{ if(e.target.closest('.progress'))return; input.click(); };
-input.onchange=e=>{ uploadFiles(e.target.files); input.value=''; };
+input.onchange=e=>{ handleSelected(e.target.files); input.value=''; };
 drop.addEventListener('dragover',e=>{e.preventDefault();drop.classList.add('over');});
 drop.addEventListener('dragleave',()=>drop.classList.remove('over'));
-drop.addEventListener('drop',e=>{e.preventDefault();drop.classList.remove('over');uploadFiles(e.dataTransfer.files);});
+drop.addEventListener('drop',e=>{e.preventDefault();drop.classList.remove('over');handleSelected(e.dataTransfer.files);});
+
+function handleSelected(fileList){
+  let items=[...fileList];
+  if(!items.length) return;
+  // Auf Mobilgeräten Videos herausfiltern
+  if(IS_MOBILE){
+    const videos=items.filter(isVideo);
+    if(videos.length){
+      alert('Videos können nur am PC hochgeladen werden:\n'+videos.map(f=>'• '+f.name).join('\n')+'\n\nDie übrigen Dateien werden hochgeladen.');
+      items=items.filter(f=>!isVideo(f));
+    }
+  }
+  if(!items.length) return;
+  uploadFiles(items);
+}
 
 async function uploadFiles(fileList){
   const items=[...fileList]; if(!items.length)return;
   $('progress').classList.add('show');
   for(let i=0;i<items.length;i++){
-    const file=items[i];
-    $('uploadingName').textContent='Lade hoch: '+file.name+' ('+(i+1)+'/'+items.length+')';
+    let file=items[i];
+    let uploadName=file.name;
+    // Video ggf. komprimieren (nur PC, nur wenn nicht "Original")
+    if(!IS_MOBILE && isVideo(file) && videoQuality!=='none'){
+      try{
+        $('uploadingName').textContent='Komprimiere: '+file.name+' (kann einige Minuten dauern)…';
+        $('progressBar').style.width=(i/items.length*100)+'%';
+        const out=await compressVideo(file, videoQuality, (pct)=>{
+          $('uploadingName').textContent='Komprimiere: '+file.name+' – '+pct+'%';
+        });
+        if(out){
+          uploadName=file.name.replace(/\.[^.]+$/,'')+'_'+videoQuality+'p.mp4';
+          file=new File([out],uploadName,{type:'video/mp4'});
+        }
+      }catch(e){
+        if(!confirm('Komprimierung von "'+file.name+'" fehlgeschlagen:\n'+e.message+'\n\nDatei unkomprimiert hochladen?')){ continue; }
+        file=items[i]; uploadName=file.name;
+      }
+    }
+    $('uploadingName').textContent='Lade hoch: '+uploadName+' ('+(i+1)+'/'+items.length+')';
     $('progressBar').style.width=(i/items.length*100)+'%';
     try{
-      const {path,token:upToken,signedUrl}=await api('upload_url',{name:file.name});
+      const {path,token:upToken,signedUrl}=await api('upload_url',{name:uploadName});
       const base='https://ugitunttmvswyxmyhnjb.supabase.co';
       let target;
       if(signedUrl && /^https?:\/\//.test(signedUrl)) target=signedUrl;
@@ -743,14 +1005,64 @@ async function uploadFiles(fileList){
         headers:{'Content-Type':file.type||'application/octet-stream'},
         body:file
       });
-      if(!up.ok){ const t=await up.text().catch(()=> ''); alert('Upload fehlgeschlagen: '+file.name+'\n'+t); continue; }
+      if(!up.ok){ const t=await up.text().catch(()=> ''); alert('Upload fehlgeschlagen: '+uploadName+'\n'+t); continue; }
       const targetFolder=(currentFolder==='all'||currentFolder==='root')?null:currentFolder;
-      await api('register_file',{name:file.name,path,size:file.size,mime_type:file.type||null,folder_id:targetFolder});
-    }catch(e){ alert('Fehler bei '+file.name+': '+e.message); }
+      await api('register_file',{name:uploadName,path,size:file.size,mime_type:file.type||null,folder_id:targetFolder});
+    }catch(e){ alert('Fehler bei '+uploadName+': '+e.message); }
     $('progressBar').style.width=((i+1)/items.length*100)+'%';
   }
-  setTimeout(()=>{$('progress').classList.remove('show');$('progressBar').style.width='0';$('uploadingName').textContent='';},400);
+  setTimeout(()=>{$('progress').classList.remove('show');$('progressBar').style.width='0';$('uploadingName').textContent='';},600);
   loadFolders(); loadFiles();
+}
+
+/* ---------- Video-Komprimierung mit ffmpeg.wasm (lazy) ---------- */
+let ffmpegInstance=null, ffmpegLoading=null;
+async function getFFmpeg(){
+  if(ffmpegInstance) return ffmpegInstance;
+  if(!ffmpegLoading){
+    ffmpegLoading=(async()=>{
+      if(typeof SharedArrayBuffer==='undefined' || !self.crossOriginIsolated){
+        throw new Error('Die Komprimierung ist auf dieser Seite nicht aktiv (Cross-Origin-Isolation fehlt). Lade die Seite einmal neu; falls es weiterhin nicht klappt, ist sie auf diesem Hosting nicht verfügbar.');
+      }
+      const { FFmpeg } = await import('https://esm.sh/@ffmpeg/ffmpeg@0.12.10');
+      const util = await import('https://esm.sh/@ffmpeg/util@0.12.1');
+      const coreBase='https://esm.sh/@ffmpeg/core@0.12.6/dist/esm';
+      const ff = new FFmpeg();
+      await ff.load({
+        coreURL: await util.toBlobURL(coreBase+'/ffmpeg-core.js','text/javascript'),
+        wasmURL: await util.toBlobURL(coreBase+'/ffmpeg-core.wasm','application/wasm'),
+      });
+      ff.__util=util;
+      ffmpegInstance=ff;
+      return ff;
+    })();
+  }
+  return ffmpegLoading;
+}
+async function compressVideo(file, quality, onProgress){
+  const ff=await getFFmpeg();
+  const util=ff.__util;
+  const height = quality==='480' ? 480 : 720;
+  const crf = quality==='480' ? '30' : '28';
+  ff.on('progress',({progress})=>{ if(onProgress) onProgress(Math.max(0,Math.min(100,Math.round((progress||0)*100)))); });
+  const inName='in_'+Date.now();
+  const outName='out_'+Date.now()+'.mp4';
+  await ff.writeFile(inName, await util.fetchFile(file));
+  // skaliert auf Zielhöhe (Breite gerade), H.264 + AAC, web-tauglich
+  await ff.exec([
+    '-i', inName,
+    '-vf', 'scale=-2:'+height,
+    '-c:v','libx264','-preset','medium','-crf',crf,
+    '-c:a','aac','-b:a','128k',
+    '-movflags','+faststart',
+    outName
+  ]);
+  const data=await ff.readFile(outName);
+  try{ await ff.deleteFile(inName); await ff.deleteFile(outName); }catch(_){}
+  const blob=new Blob([data.buffer],{type:'video/mp4'});
+  // Falls komprimiert größer als Original wäre: Original behalten
+  if(blob.size>=file.size){ return null; }
+  return blob;
 }
 
 /* ---------- Codes (Admin) ---------- */
