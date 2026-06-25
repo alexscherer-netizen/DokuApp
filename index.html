@@ -117,6 +117,14 @@
   .new-folder-row input{flex:1;background:var(--panel-2);border:1px solid var(--border);color:var(--text);padding:10px 12px;border-radius:10px;font-size:14px;outline:none}
   .new-folder-row input:focus{border-color:var(--accent)}
   .upload-target{font-size:12px;color:var(--muted);margin-bottom:10px}
+  .hidrive-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;margin-bottom:14px}
+  .sync-btn{display:inline-flex;align-items:center;gap:8px;background:var(--accent-soft);color:var(--accent);border:1px solid rgba(16,185,129,.4);padding:9px 15px;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;transition:.15s}
+  .sync-btn:hover{background:rgba(16,185,129,.18)}
+  .sync-btn:disabled{opacity:.6;cursor:default}
+  .sync-btn svg{width:16px;height:16px}
+  .sync-btn.spinning svg{animation:spin 1s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .hidrive-hint{font-size:12px;color:var(--muted);flex:1;min-width:180px}
   .upload-target strong{color:var(--accent)}
   /* Video-Komprimierung */
   .vid-opts{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin-bottom:14px}
@@ -320,12 +328,20 @@
       <div class="drop hidden" id="drop">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0-12l-4 4m4-4l4 4"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
         <div class="big">Dateien hierher ziehen oder klicken</div>
-        <div class="small" id="dropHint">Videos, Bilder, Audio, PDFs – bis 500 MB pro Datei</div>
+        <div class="small" id="dropHint">Videos, Bilder, Audio, PDFs – bis 40 MB pro Datei</div>
         <input type="file" id="file" multiple hidden>
         <div class="progress" id="progress"><span id="progressBar"></span></div>
         <div class="uploading-name" id="uploadingName"></div>
       </div>
       <div class="upload-target hidden" id="uploadTarget"></div>
+
+      <div class="hidrive-bar hidden" id="hidriveBar">
+        <button class="sync-btn" id="syncBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 01-9 9c-2.4 0-4.6-1-6.2-2.5L3 16"/><path d="M3 12a9 9 0 019-9c2.4 0 4.6 1 6.2 2.5L21 8"/><path d="M21 4v4h-4M3 20v-4h4"/></svg>
+          Mit HiDrive synchronisieren
+        </button>
+        <span class="hidrive-hint">Große Dateien direkt bei HiDrive im Ordner <strong>Schule</strong> ablegen, dann hier synchronisieren.</span>
+      </div>
 
       <div class="viewer-note hidden" id="viewerNote">
         Wähle oben einen Ordner. Tippe bei einer Datei auf <strong>Abspielen</strong> für die Vorschau oder auf das Download-Symbol, um zu speichern.
@@ -441,6 +457,30 @@ async function api(action, body){
   return data;
 }
 
+// Holt eine anzeigbare URL für eine Datei – egal ob Supabase Storage oder HiDrive.
+// Bei HiDrive wird die Datei über die Function gestreamt und als Blob-URL bereitgestellt.
+// Rückgabe: { url, revoke } – revoke() nach Gebrauch aufrufen (nur bei HiDrive nötig).
+async function fetchFileURL(r, asDownload){
+  if(r.storage==='hidrive'){
+    const res=await fetch(FN_URL,{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+ANON,'apikey':ANON},
+      body: JSON.stringify({ action:'hidrive_download', token, id:r.id, download:!!asDownload })
+    });
+    if(!res.ok){
+      let msg='HiDrive-Download fehlgeschlagen';
+      try{ const j=await res.json(); msg=j.error||msg; }catch(_){}
+      throw new Error(msg);
+    }
+    const blob=await res.blob();
+    const url=URL.createObjectURL(blob);
+    return { url, revoke:()=>URL.revokeObjectURL(url) };
+  }
+  // Supabase Storage: signierte URL
+  const {url}=await api('signed_url',{id:r.id,download:asDownload?true:undefined});
+  return { url, revoke:()=>{} };
+}
+
 /* ---------- Helpers ---------- */
 function fmtSize(b){
   if(b<1024) return b+' B';
@@ -526,6 +566,7 @@ function onLogin(){
   $('roleLabel').textContent = isAdmin?'Admin':'Nutzer';
   $('adminBar').classList.toggle('hidden',!isAdmin);
   $('drop').classList.toggle('hidden',!isAdmin);
+  $('hidriveBar').classList.toggle('hidden',!isAdmin);
   $('newFolderRow').classList.toggle('hidden',!isAdmin);
   $('viewerNote').classList.toggle('hidden',isAdmin);
   // Video-Komprimierung nur für Admin am PC; auf Mobil Hinweis statt Optionen
@@ -539,7 +580,7 @@ function onLogin(){
   }
   $('dropHint').textContent = IS_MOBILE
     ? 'Bilder, PDF, Word, Audio – Videos nur am PC'
-    : 'Videos, Bilder, Audio, PDFs – bis 500 MB pro Datei';
+    : 'Videos, Bilder, Audio, PDFs – bis 40 MB (größere per Sync)';
   currentFolder='all';
   searchTerm=''; $('searchInput').value=''; $('searchClear').classList.remove('show');
   filterType='all'; dateFrom=''; dateTo='';
@@ -798,7 +839,7 @@ function renderFiles(rows, isSearch, isFiltered){
       (isAdmin?'<button class="btn move" title="In Ordner verschieben"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><path d="M12 11v5m0-5l-2 2m2-2l2 2"/></svg></button>':'')+
       (isAdmin?'<button class="btn del" title="Löschen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14M9 7V5h6v2m-7 0v12a1 1 0 001 1h6a1 1 0 001-1V7"/></svg></button>':'')+
       '</div>';
-    if(k==='image') loadThumb(r.id,row.querySelector('[data-thumb]'));
+    if(k==='image') loadThumb(r,row.querySelector('[data-thumb]'));
     if(canPreview) row.querySelector('.play').onclick=()=>preview(r,k);
     row.querySelector('.dl').onclick=e=>download(r,e.currentTarget);
     if(isAdmin) row.querySelector('.move').onclick=()=>moveFile(r);
@@ -806,8 +847,14 @@ function renderFiles(rows, isSearch, isFiltered){
     list.appendChild(row);
   });
 }
-async function loadThumb(id,el){
-  try{ const {url}=await api('signed_url',{id}); el.innerHTML='<img src="'+url+'" alt="">'; }catch(_){}
+async function loadThumb(r,el){
+  try{
+    const {url,revoke}=await fetchFileURL(r);
+    const img=new Image();
+    img.onload=()=>{ el.innerHTML=''; el.appendChild(img); };
+    img.onerror=()=>revoke();
+    img.alt=''; img.src=url;
+  }catch(_){}
 }
 async function preview(r,k){
   $('mName').textContent=r.name;
@@ -815,7 +862,8 @@ async function preview(r,k){
   $('mBody').innerHTML='<div style="color:var(--muted);font-size:13px">Lädt…</div>';
   $('modal').classList.add('show');
   try{
-    const {url}=await api('signed_url',{id:r.id});
+    const {url,revoke}=await fetchFileURL(r);
+    currentPreviewRevoke=revoke;
     if(k==='video'){const el=document.createElement('video');el.controls=true;el.autoplay=true;el.src=url;$('mBody').innerHTML='';$('mBody').appendChild(el);return;}
     if(k==='image'){const el=document.createElement('img');el.src=url;$('mBody').innerHTML='';$('mBody').appendChild(el);return;}
     if(k==='audio'){const el=document.createElement('audio');el.controls=true;el.autoplay=true;el.src=url;$('mBody').innerHTML='';$('mBody').appendChild(el);return;}
@@ -833,6 +881,7 @@ async function preview(r,k){
     }
   }catch(e){ $('mBody').innerHTML='<div style="color:#fca5a5;font-size:13px">Fehler: '+escapeHtml(e.message)+'</div>'; }
 }
+let currentPreviewRevoke=null;
 
 let mammothPromise=null;
 function loadMammoth(){
@@ -862,7 +911,7 @@ async function renderDocx(url, r){
     $('mBody').innerHTML='<div style="color:#fca5a5;font-size:13px;padding:16px;text-align:center">Word-Vorschau fehlgeschlagen: '+escapeHtml(e.message)+'<br>Du kannst die Datei stattdessen herunterladen.</div>';
   }
 }
-function closeModal(){ const v=$('mBody').querySelector('video,audio'); if(v)v.pause(); $('mBody').innerHTML=''; $('mBody').style.display=''; $('modal').classList.remove('show'); }
+function closeModal(){ const v=$('mBody').querySelector('video,audio'); if(v)v.pause(); $('mBody').innerHTML=''; $('mBody').style.display=''; $('modal').classList.remove('show'); if(currentPreviewRevoke){ try{currentPreviewRevoke();}catch(_){} currentPreviewRevoke=null; } }
 $('closeX').onclick=closeModal;
 $('closeBig').onclick=closeModal;
 $('modal').onclick=e=>{if(e.target===$('modal'))closeModal();};
@@ -896,8 +945,9 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();});
 async function download(r,btn){
   btn.disabled=true;
   try{
-    const {url}=await api('signed_url',{id:r.id,download:true});
+    const {url,revoke}=await fetchFileURL(r,true);
     const a=document.createElement('a'); a.href=url; a.download=r.name; a.click();
+    setTimeout(()=>revoke(),60000); // Blob-URL nach 60s freigeben (Zeit zum Speichern)
   }catch(e){ alert('Download fehlgeschlagen: '+e.message); }
   finally{ btn.disabled=false; }
 }
@@ -953,6 +1003,27 @@ drop.addEventListener('dragover',e=>{e.preventDefault();drop.classList.add('over
 drop.addEventListener('dragleave',()=>drop.classList.remove('over'));
 drop.addEventListener('drop',e=>{e.preventDefault();drop.classList.remove('over');handleSelected(e.dataTransfer.files);});
 
+// HiDrive-Synchronisierung
+$('syncBtn').onclick=async()=>{
+  const btn=$('syncBtn');
+  btn.disabled=true; btn.classList.add('spinning');
+  const label=btn.childNodes[btn.childNodes.length-1];
+  const orig=label.textContent;
+  label.textContent=' Synchronisiere…';
+  try{
+    // aktuellen Ordner mitsynchronisieren (oder Hauptordner bei "Alle"/"Ohne Ordner")
+    const targetFolder=(currentFolder==='all'||currentFolder==='root')?null:currentFolder;
+    const folderSub=(currentFolder==='all'||currentFolder==='root')?null:currentFolderName();
+    const res=await api('hidrive_sync',{folder_id:targetFolder,folder_sub:folderSub});
+    label.textContent=' '+(res.added>0?(res.added+' neue Datei'+(res.added===1?'':'en')+' gefunden'):'Keine neuen Dateien');
+    loadFolders(); loadFiles();
+    setTimeout(()=>{ label.textContent=orig; },2500);
+  }catch(e){
+    alert('Synchronisierung fehlgeschlagen: '+e.message);
+    label.textContent=orig;
+  }finally{ btn.disabled=false; btn.classList.remove('spinning'); }
+};
+
 function handleSelected(fileList){
   let items=[...fileList];
   if(!items.length) return;
@@ -994,25 +1065,36 @@ async function uploadFiles(fileList){
     $('uploadingName').textContent='Lade hoch: '+uploadName+' ('+(i+1)+'/'+items.length+')';
     $('progressBar').style.width=(i/items.length*100)+'%';
     try{
-      const {path,token:upToken,signedUrl}=await api('upload_url',{name:uploadName});
-      const base='https://ugitunttmvswyxmyhnjb.supabase.co';
-      let target;
-      if(signedUrl && /^https?:\/\//.test(signedUrl)) target=signedUrl;
-      else if(signedUrl) target=base+(signedUrl.startsWith('/')?signedUrl:'/'+signedUrl);
-      else target=base+'/storage/v1/object/upload/sign/dateiablage/'+path+'?token='+encodeURIComponent(upToken);
-      const up=await fetch(target,{
-        method:'PUT',
-        headers:{'Content-Type':file.type||'application/octet-stream'},
-        body:file
-      });
-      if(!up.ok){ const t=await up.text().catch(()=> ''); alert('Upload fehlgeschlagen: '+uploadName+'\n'+t); continue; }
+      // Größenlimit für App-Upload (Rest muss manuell zu HiDrive + Sync)
+      if(file.size > 40*1024*1024){
+        alert('„'+uploadName+'" ist größer als 40 MB und kann nicht über die App hochgeladen werden.\n\nBitte lege die Datei direkt bei HiDrive im Schule-Ordner ab und nutze dann „Synchronisieren".');
+        continue;
+      }
+      const data_base64=await fileToBase64(file);
       const targetFolder=(currentFolder==='all'||currentFolder==='root')?null:currentFolder;
-      await api('register_file',{name:uploadName,path,size:file.size,mime_type:file.type||null,folder_id:targetFolder});
+      const folderSub=(currentFolder==='all'||currentFolder==='root')?null:currentFolderName();
+      await api('hidrive_upload',{
+        name:uploadName,
+        data_base64,
+        mime_type:file.type||null,
+        folder_id:targetFolder,
+        folder_sub:folderSub
+      });
     }catch(e){ alert('Fehler bei '+uploadName+': '+e.message); }
     $('progressBar').style.width=((i+1)/items.length*100)+'%';
   }
   setTimeout(()=>{$('progress').classList.remove('show');$('progressBar').style.width='0';$('uploadingName').textContent='';},600);
   loadFolders(); loadFiles();
+}
+
+// Datei -> base64 (ohne data:-Präfix)
+function fileToBase64(file){
+  return new Promise((resolve,reject)=>{
+    const fr=new FileReader();
+    fr.onload=()=>{ const s=String(fr.result); resolve(s.slice(s.indexOf(',')+1)); };
+    fr.onerror=()=>reject(new Error('Datei konnte nicht gelesen werden.'));
+    fr.readAsDataURL(file);
+  });
 }
 
 /* ---------- Video-Komprimierung mit ffmpeg.wasm (lazy) ---------- */
